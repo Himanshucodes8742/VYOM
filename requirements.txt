@@ -1,0 +1,10 @@
+streamlit
+opencv-contrib-python
+numpy
+scipy
+tifffile
+Pillow
+matplotlib
+pytest
+phasepack
+scikit-image
