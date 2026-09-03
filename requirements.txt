@@ -1,5 +1,5 @@
 streamlit==1.63.0
-opencv-contrib-python-headless
+opencv-python-headless==4.13.0.92
 numpy==2.5.0
 scipy==1.18.0
 tifffile==2026.8.23
