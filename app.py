@@ -9,6 +9,7 @@ import io
 import csv
 
 from registration_engine.pipeline import run_pipeline
+from registration_engine.io_utils import list_demo_pairs
 
 st.set_page_config(page_title="Lunar Image Registration", layout="wide")
 
@@ -18,9 +19,7 @@ st.write("A tool for registering and aligning lunar surface images. Select a dem
 st.subheader("Input Selection")
 
 DATA_DIR = Path("data/demo_pairs")
-demo_pairs = []
-if DATA_DIR.exists():
-    demo_pairs = sorted([d.name for d in DATA_DIR.iterdir() if d.is_dir()])
+demo_pairs = list_demo_pairs(DATA_DIR)
 
 demo_pairs.insert(0, "Upload my own images")
 

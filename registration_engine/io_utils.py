@@ -113,3 +113,11 @@ def load_and_resample(
         ref_img = cv2.resize(ref_img, (new_ref_w, new_ref_h), interpolation=cv2.INTER_LINEAR)
 
     return source_img, ref_img
+
+def list_demo_pairs(data_dir: str | Path = "data/demo_pairs") -> list[str]:
+    """Return a list of available demo pair folder names."""
+    data_dir = Path(data_dir)
+    if data_dir.exists():
+        return sorted([d.name for d in data_dir.iterdir() if d.is_dir()])
+    return []
+

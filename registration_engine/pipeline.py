@@ -2,6 +2,7 @@
 
 import traceback
 import numpy as np
+import time
 
 from registration_engine.io_utils import load_and_resample
 from registration_engine.preprocessing import clahe
@@ -54,6 +55,8 @@ def run_pipeline(
     }
 
     try:
+        start_time = time.time()
+        
         # Stage 1: Load images
         source_img, reference_img = load_and_resample(source_path, reference_path)
 
@@ -99,6 +102,10 @@ def run_pipeline(
             transform_matrix,
             total_raw_matches=len(raw_matches),
         )
+        
+        runtime = time.time() - start_time
+        metrics["runtime"] = runtime
+        
         result["metrics"] = metrics
         result["matches"] = good_matches
         result["kp_source"] = kp_source
