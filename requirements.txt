@@ -1,0 +1,11 @@
+streamlit==1.63.0
+opencv-python-headless==4.13.0.92
+numpy==2.5.0
+scipy==1.18.0
+tifffile==2026.8.23
+Pillow==12.3.0
+matplotlib==3.11.0
+pytest==9.1.1
+phasepack==1.5
+pandas==3.0.3
+scikit-image==0.26.0
