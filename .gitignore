@@ -1,4 +1,68 @@
-venv/
+# Byte-compiled / optimized / DLL files
 __pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Node.js & Frontend dependencies
+node_modules/
+frontend/node_modules/
+.npm/
+
+# Build artifacts
+frontend/dist/
+dist/
+
+# Environment variables & secrets
 .env
-*.pyc
+.env.local
+.env.*.local
+frontend/.env
+frontend/.env.local
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Temporary Chrome profiles / automation dumps
+chrome_profile_tmp/
+*.log
