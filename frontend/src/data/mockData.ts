@@ -77,6 +77,18 @@ export const ALGORITHM_BENCHMARKS: AlgorithmBenchmark[] = [
     description: 'Radiation-invariant feature transform leveraging frequency-domain phase congruency rather than gradient magnitudes. Fully resilient to extreme solar phase angles.'
   },
   {
+    id: 'learned_verifier',
+    name: 'Learned Match Verifier (trained)',
+    tag: 'TRAINED ML',
+    engine: 'Random Forest Verifier + AKAZE',
+    rmse: 1.45,
+    inliers: 46,
+    ratio: 86.8,
+    score: 0.84,
+    runtime: 1.25,
+    description: 'Custom-trained Random Forest model evaluating candidate match scale, descriptor distance, Lowe ratio, and density before RANSAC.'
+  },
+  {
     id: 'superglue',
     name: 'SuperGlue',
     tag: 'NEURAL GNN',

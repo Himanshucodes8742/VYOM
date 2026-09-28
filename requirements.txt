@@ -12,3 +12,7 @@ scikit-image==0.26.0
 fastapi>=0.115.0
 uvicorn>=0.30.0
 python-multipart>=0.0.9
+scikit-learn>=1.5.0
+joblib>=1.4.0
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.0.0

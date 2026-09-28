@@ -46,7 +46,11 @@ else:
     else:
         st.warning("Could not find source and reference images in the selected demo folder.")
 
-algorithm = st.selectbox("Feature Detection Algorithm:", ["sift", "akaze", "rift2"])
+col_algo, col_prep = st.columns(2)
+with col_algo:
+    algorithm = st.selectbox("Feature Detection Algorithm:", ["sift", "akaze", "rift2", "learned_verifier", "learned_descriptor", "crater_landmarks"])
+with col_prep:
+    preprocessing = st.selectbox("Preprocessing Method:", ["clahe", "photometric", "photometric_clahe", "histogram"])
 
 if st.button("Register images", type="primary"):
     ready = False
@@ -70,7 +74,24 @@ if st.button("Register images", type="primary"):
 
     if ready:
         with st.spinner("Resampling... Preprocessing... Detecting and matching features... Filtering outliers... Warping image... Computing metrics..."):
-            result = run_pipeline(source_path, reference_path, algorithm=algorithm)
+            sun_elev = None
+            if "photometric" in preprocessing:
+                xml_candidates = list(Path("data").glob("*.xml"))
+                for xc in xml_candidates:
+                    try:
+                        from registration_engine.metadata import get_sun_elevation
+                        sun_elev = get_sun_elevation(str(xc))
+                        break
+                    except Exception:
+                        pass
+
+            result = run_pipeline(
+                source_path,
+                reference_path,
+                algorithm=algorithm,
+                preprocessing=preprocessing,
+                source_sun_elevation=sun_elev,
+            )
             
         if not result["success"]:
             st.error(result["error"])

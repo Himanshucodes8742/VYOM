@@ -66,3 +66,15 @@ Thumbs.db
 # Temporary Chrome profiles / automation dumps
 chrome_profile_tmp/
 *.log
+
+# Large raw data files (exceeds GitHub 100MB limit)
+*.img
+*.npz
+*.csv
+data/training/
+data/test_outputs/
+
+# PDFs and scratch/test scripts (not needed on server)
+*.pdf
+scratch/
+test_adaptive.py

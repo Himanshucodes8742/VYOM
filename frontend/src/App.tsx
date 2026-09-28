@@ -17,7 +17,8 @@ import TopoBackground from './components/TopoBackground';
 import RegisterView from './components/RegisterView';
 import CompareView from './components/CompareView';
 import AboutView from './components/AboutView';
-import { NavTab, AlgorithmName, DemoPair, Keypoint, RegistrationMetrics } from './types';
+import ChangeDetectionSection from './components/ChangeDetectionSection';
+import { NavTab, AlgorithmName, PreprocessingName, DemoPair, Keypoint, RegistrationMetrics, ChangeDetectionResult } from './types';
 import { API_BASE_URL } from './config';
 
 export default function App() {
@@ -36,6 +37,7 @@ export default function App() {
   const [algorithm, setAlgorithm] = useState<AlgorithmName>(
     'RIFT2-style (Phase Congruency)'
   );
+  const [preprocessing, setPreprocessing] = useState<PreprocessingName>('clahe');
 
   // Backend demo pairs state
   const [demoPairs, setDemoPairs] = useState<DemoPair[]>([]);
@@ -50,6 +52,13 @@ export default function App() {
   const [keypoints, setKeypoints] = useState<Keypoint[]>([]);
   const [metrics, setMetrics] = useState<RegistrationMetrics | null>(null);
   const [registrationError, setRegistrationError] = useState<string | null>(null);
+  const [escalated, setEscalated] = useState<boolean | null>(null);
+  const [adaptiveReason, setAdaptiveReason] = useState<string | null>(null);
+  const [baselineMetrics, setBaselineMetrics] = useState<RegistrationMetrics | null>(null);
+
+  // Change detection state (Module 6)
+  const [changeResult, setChangeResult] = useState<ChangeDetectionResult | null>(null);
+  const [isDetectingChanges, setIsDetectingChanges] = useState<boolean>(false);
 
   // Live Mission Clock (UTC)
   const [utcTime, setUtcTime] = useState<string>('');
@@ -95,6 +104,10 @@ export default function App() {
     setRegisteredImage(null);
     setKeypoints([]);
     setMetrics(null);
+    setEscalated(null);
+    setAdaptiveReason(null);
+    setBaselineMetrics(null);
+    setChangeResult(null);
 
     try {
       if (pair.source_url) {
@@ -172,6 +185,7 @@ export default function App() {
       formData.append('reference_image', referenceFile);
       formData.append('sensor_pair', `${sourceSensor} -> ${referenceSensor}`);
       formData.append('algorithm', algorithm);
+      formData.append('preprocessing', preprocessing);
 
       const res = await fetch(`${API_BASE_URL}/register`, {
         method: 'POST',
@@ -190,6 +204,9 @@ export default function App() {
         setRegisteredImage(data.registered_image);
         setKeypoints(data.matches || []);
         setMetrics(data.metrics);
+        setEscalated(data.escalated ?? null);
+        setAdaptiveReason(data.reason ?? null);
+        setBaselineMetrics(data.baseline_metrics ?? null);
         setHasResults(true);
         setRegistrationError(null);
         showToast(
@@ -218,6 +235,7 @@ export default function App() {
       setSourceFileName(file.name);
       setSourceImage(URL.createObjectURL(file));
       setRegistrationError(null);
+      setChangeResult(null);
       showToast(`Source file ingested: ${file.name}`, 'info');
     }
   };
@@ -229,7 +247,51 @@ export default function App() {
       setReferenceFileName(file.name);
       setReferenceImage(URL.createObjectURL(file));
       setRegistrationError(null);
+      setChangeResult(null);
       showToast(`Reference file ingested: ${file.name}`, 'info');
+    }
+  };
+
+  const handleDetectChanges = async (thresholdVal: number = 30, minAreaVal: number = 50) => {
+    if (!sourceFile || !referenceFile) {
+      showToast('Both source and reference image files are required.', 'info');
+      return;
+    }
+
+    setIsDetectingChanges(true);
+    try {
+      const formData = new FormData();
+      formData.append('source_image', sourceFile);
+      formData.append('reference_image', referenceFile);
+      formData.append('sensor_pair', `${sourceSensor} -> ${referenceSensor}`);
+      formData.append('algorithm', algorithm);
+      formData.append('preprocessing', preprocessing);
+      formData.append('threshold', thresholdVal.toString());
+      formData.append('min_region_area', minAreaVal.toString());
+
+      const res = await fetch(`${API_BASE_URL}/detect-changes`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        throw new Error(`Server returned HTTP ${res.status}: ${res.statusText}`);
+      }
+
+      const data: ChangeDetectionResult = await res.json();
+      setChangeResult(data);
+      if (data.success) {
+        showToast(
+          `Change Detection: ${data.region_count} regions (${data.change_percentage.toFixed(2)}% changed)`,
+          'success'
+        );
+      } else {
+        showToast(data.error || 'Change detection failed.', 'info');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Change detection request failed.', 'info');
+    } finally {
+      setIsDetectingChanges(false);
     }
   };
 
@@ -326,7 +388,27 @@ export default function App() {
               {!sidebarCollapsed && <span className="truncate">Compare Algorithms</span>}
             </button>
 
-            {/* Nav item 3: About */}
+            {/* Nav item 3: Change Detection (Module 6) */}
+            <button
+              onClick={() => setActiveTab('changes')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded font-mono text-xs transition-all duration-200 cursor-pointer ${
+                activeTab === 'changes'
+                  ? 'bg-[#152132] text-emerald-400 border-l-2 border-emerald-400 font-bold shadow-[0_0_12px_rgba(16,185,129,0.15)]'
+                  : 'text-slate-500 hover:text-slate-300 hover:bg-[#111924] border-l-2 border-transparent'
+              }`}
+            >
+              <Activity className="w-4 h-4 shrink-0 text-emerald-400" />
+              {!sidebarCollapsed && (
+                <div className="flex items-center justify-between w-full">
+                  <span className="truncate">Change Detection</span>
+                  <span className="text-[9px] px-1 py-0.2 bg-emerald-950 text-emerald-400 rounded border border-emerald-800">
+                    MOD 6
+                  </span>
+                </div>
+              )}
+            </button>
+
+            {/* Nav item 4: About */}
             <button
               onClick={() => setActiveTab('about')}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded font-mono text-xs transition-all duration-200 cursor-pointer ${
@@ -364,6 +446,9 @@ export default function App() {
                 sourceSensor={sourceSensor}
                 referenceSensor={referenceSensor}
                 algorithm={algorithm}
+                setAlgorithm={setAlgorithm}
+                preprocessing={preprocessing}
+                setPreprocessing={setPreprocessing}
                 isProcessing={isProcessing}
                 currentStepIndex={currentStepIndex}
                 hasResults={hasResults}
@@ -371,7 +456,6 @@ export default function App() {
                 setWarpMode={setWarpMode}
                 setSourceSensor={setSourceSensor}
                 setReferenceSensor={setReferenceSensor}
-                setAlgorithm={setAlgorithm}
                 onRegisterClick={handleRegister}
                 onSourceUpload={handleSourceUpload}
                 onRefUpload={handleRefUpload}
@@ -383,6 +467,12 @@ export default function App() {
                 keypoints={keypoints}
                 metrics={metrics}
                 registrationError={registrationError}
+                escalated={escalated}
+                adaptiveReason={adaptiveReason}
+                baselineMetrics={baselineMetrics}
+                changeResult={changeResult}
+                isDetectingChanges={isDetectingChanges}
+                onDetectChanges={handleDetectChanges}
               />
             )}
 
@@ -395,6 +485,17 @@ export default function App() {
                 sourceFile={sourceFile}
                 referenceFile={referenceFile}
               />
+            )}
+
+            {activeTab === 'changes' && (
+              <div className="space-y-4">
+                <ChangeDetectionSection
+                  changeResult={changeResult}
+                  isDetecting={isDetectingChanges}
+                  onDetectChanges={handleDetectChanges}
+                  showToast={showToast}
+                />
+              </div>
             )}
 
             {activeTab === 'about' && <AboutView />}

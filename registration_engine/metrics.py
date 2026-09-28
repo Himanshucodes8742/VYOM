@@ -43,16 +43,22 @@ def compute_metrics(
         }
 
     # --- RMSE: reprojection error ---
-    # Project source keypoints through the homography and measure distance
-    # to the matched reference keypoints.
-    src_pts = np.float32(
-        [kp_source[m.queryIdx].pt for m in good_matches]
-    ).reshape(-1, 1, 2)
+    # Project source keypoints through the homography using pure NumPy matrix
+    # multiplication to guarantee safety and avoid C++ heap corruption issues.
+    H = np.asarray(transform_matrix, dtype=np.float64)
+    src_pts_h = np.array(
+        [[kp_source[m.queryIdx].pt[0], kp_source[m.queryIdx].pt[1], 1.0] for m in good_matches],
+        dtype=np.float64,
+    )
     ref_pts = np.float32(
         [kp_reference[m.trainIdx].pt for m in good_matches]
     )
 
-    projected = cv2.perspectiveTransform(src_pts, transform_matrix).reshape(-1, 2)
+    proj_h = (H @ src_pts_h.T).T
+    denom = proj_h[:, 2]
+    denom_safe = np.where(np.abs(denom) > 1e-9, denom, 1e-9)
+    projected = proj_h[:, :2] / denom_safe[:, None]
+
     errors = np.sqrt(np.sum((projected - ref_pts) ** 2, axis=1))
     rmse = float(np.sqrt(np.mean(errors ** 2)))
 

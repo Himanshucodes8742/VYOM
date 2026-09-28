@@ -119,3 +119,105 @@ def phase_congruency_map(image: np.ndarray) -> np.ndarray:
         return np.clip(np.nan_to_num(norm), 0, 255).astype(np.uint8)
     else:
         return np.zeros(image.shape, dtype=np.uint8)
+
+
+def photometric_normalize(
+    image: np.ndarray,
+    sun_elevation_deg: float,
+    min_factor: float = 0.05
+) -> np.ndarray:
+    """Photometric normalization using the Lommel-Seeliger scattering model.
+
+    Compensates for illumination-driven brightness variation across differing
+    solar elevations before further local contrast enhancement is applied.
+
+    Args:
+        image: Grayscale input image (2D numpy array).
+        sun_elevation_deg: Solar elevation angle above the local horizon in degrees.
+        min_factor: Lower bound for the Lommel-Seeliger factor to prevent division by
+                    near-zero values at grazing sun angles.
+
+    Returns:
+        Photometrically normalized 2D grayscale image with dtype uint8 in [0, 255].
+    """
+    if image.ndim != 2:
+        raise ValueError(f"Expected 2D grayscale image, got shape {image.shape}")
+
+    # Ensure float precision for radiometric calculations
+    img_float = image.astype(np.float32)
+
+    # 1. Compute incidence angle as (90 - sun_elevation_deg) in radians.
+    # NOTE: This assumes a flat local surface normal across the scene (scene-level approximation).
+    # It does not perform a per-pixel terrain-aware topographic correction, which requires a
+    # high-resolution Digital Elevation Model (DEM) and will be added separately in a later module.
+    incidence_deg = max(0.0, min(90.0, 90.0 - float(sun_elevation_deg)))
+    incidence_rad = np.radians(incidence_deg)
+
+    # 2. Assume emission angle near 0 (nadir viewing geometry), so mu = cos(0) = 1.0.
+    mu = 1.0
+    mu0 = float(np.cos(incidence_rad))
+
+    # 3. Compute the Lommel-Seeliger reflectance factor: mu0 / (mu0 + mu)
+    ls_factor = mu0 / (mu0 + mu)
+
+    # 4. Handle edge case: very low sun elevation (near-grazing illumination, where mu0 -> 0).
+    # NOTE: As sun elevation approaches 0, the denominator approaches 0, which would amplify
+    # sensor readout noise and cause extreme, blown-out, unusable pixel values. We clip the
+    # correction factor to min_factor to maintain numerical stability and visual fidelity.
+    effective_factor = max(ls_factor, float(min_factor))
+
+    # 5. Divide pixel values by factor to compensate for predicted illumination disparity,
+    # then clip and convert back to valid 0-255 uint8 range.
+    normalized = img_float / effective_factor
+    return np.clip(normalized, 0, 255).astype(np.uint8)
+
+
+def preprocess_image(
+    image: np.ndarray,
+    method: str = "clahe",
+    sun_elevation_deg: float | None = None,
+    reference_image: np.ndarray | None = None,
+) -> np.ndarray:
+    """Execute selected preprocessing routine or chained pipeline.
+
+    Supported methods:
+      - "clahe": Contrast Limited Adaptive Histogram Equalization.
+      - "photometric": Lommel-Seeliger illumination normalization.
+      - "photometric_clahe" (or "photometric+clahe"): Lommel-Seeliger normalization
+        followed by CLAHE contrast equalization.
+      - "histogram": Match histogram to reference_image.
+      - "phase_congruency": Phase congruency moment map.
+      - "none": Return unadjusted uint8 image.
+
+    Args:
+        image: Grayscale 2D array.
+        method: Preprocessing pipeline option string.
+        sun_elevation_deg: Sun elevation angle in degrees (required for photometric modes).
+        reference_image: Reference 2D array (required for histogram matching).
+
+    Returns:
+        Preprocessed 2D uint8 image.
+    """
+    key = method.strip().lower()
+    if key == "none":
+        return image if image.dtype == np.uint8 else np.clip(image, 0, 255).astype(np.uint8)
+    elif key == "clahe":
+        return clahe(image)
+    elif key == "photometric":
+        if sun_elevation_deg is None:
+            raise ValueError("sun_elevation_deg is required for photometric preprocessing")
+        return photometric_normalize(image, sun_elevation_deg)
+    elif key in ("photometric_clahe", "photometric+clahe"):
+        if sun_elevation_deg is None:
+            raise ValueError("sun_elevation_deg is required for photometric+clahe preprocessing")
+        photo = photometric_normalize(image, sun_elevation_deg)
+        return clahe(photo)
+    elif key in ("histogram", "histogram_match"):
+        if reference_image is None:
+            raise ValueError("reference_image is required for histogram matching")
+        return histogram_match(image, reference_image)
+    elif key in ("phase_congruency", "phase_congruency_map"):
+        return phase_congruency_map(image)
+    else:
+        raise ValueError(f"Unknown preprocessing method: {method}")
+

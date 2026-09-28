@@ -238,7 +238,7 @@ export default function CompareView({
         <div className="relative pt-2 pb-6 space-y-5">
           {/* Shaded "Acceptable Accuracy" Zone background band */}
           <div
-            className="absolute top-0 bottom-6 left-48 rounded bg-emerald-500/[0.04] border-x border-emerald-500/25 pointer-events-none"
+            className="absolute top-0 bottom-6 left-64 rounded bg-emerald-500/[0.04] border-x border-emerald-500/25 pointer-events-none"
             style={{
               width: `${(2.0 / maxRmse) * 58}%`
             }}
@@ -253,6 +253,12 @@ export default function CompareView({
             const isOptimal = alg.isBestRmse;
             const barColor = isOptimal
               ? '#FF9F43'
+              : alg.tag === 'PHOTOMETRIC' || alg.id?.includes('photometric')
+              ? '#2DD4BF'
+              : alg.id === 'learned_verifier'
+              ? '#38BDF8'
+              : alg.id === 'learned_descriptor'
+              ? '#A78BFA'
               : alg.id === 'superglue'
               ? '#3FD0E0'
               : alg.rmse <= 2.0
@@ -262,20 +268,32 @@ export default function CompareView({
             return (
               <div key={alg.id} className="relative z-10 flex items-center gap-4">
                 {/* Algorithm label column */}
-                <div className="w-48 text-right pr-2">
+                <div className="w-64 text-right pr-2">
                   <div className="flex items-center justify-end gap-1.5">
                     {isOptimal && (
                       <span className="w-1.5 h-1.5 rounded-full bg-[#FF9F43] animate-pulse" />
                     )}
                     <span
                       className={`text-xs font-mono font-bold tracking-wide ${
-                        isOptimal ? 'text-amber-300' : 'text-slate-300'
+                        isOptimal
+                          ? 'text-amber-300'
+                          : alg.id === 'learned_verifier'
+                          ? 'text-sky-300'
+                          : 'text-slate-300'
                       }`}
                     >
                       {alg.name}
                     </span>
                   </div>
-                  <div className="text-[10px] font-mono text-slate-400 truncate">{alg.tag}</div>
+                  <div
+                    className={`text-[10px] font-mono truncate ${
+                      alg.id === 'learned_verifier'
+                        ? 'text-amber-400 font-semibold'
+                        : 'text-slate-400'
+                    }`}
+                  >
+                    {alg.tag}
+                  </div>
                 </div>
 
                 {/* Bar track and animated progress fill */}
@@ -286,7 +304,11 @@ export default function CompareView({
                       width: `${animProgress * barPercent}%`,
                       transitionDelay: `${index * 140}ms`,
                       backgroundColor: barColor,
-                      boxShadow: isOptimal ? '0 0 14px rgba(255, 159, 67, 0.4)' : undefined
+                      boxShadow: isOptimal
+                        ? '0 0 14px rgba(255, 159, 67, 0.4)'
+                        : alg.id === 'learned_verifier'
+                        ? '0 0 12px rgba(56, 189, 248, 0.35)'
+                        : undefined
                     }}
                   >
                     <span className="text-[11px] font-mono font-bold text-black select-none">
@@ -313,7 +335,7 @@ export default function CompareView({
         </div>
 
         {/* Chart X-axis axis scale ticks */}
-        <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 pt-2 border-t border-[#16202E] pl-48 pr-24">
+        <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 pt-2 border-t border-[#16202E] pl-64 pr-24">
           <span>0.0 px (Exact)</span>
           <span>0.75 px</span>
           <span>1.50 px (Sub-pixel)</span>
@@ -358,8 +380,20 @@ export default function CompareView({
                   {/* Name */}
                   <td className="py-3 px-4">
                     <div className="font-bold text-slate-200 group-hover:text-white flex items-center gap-2">
-                      <span>{item.name}</span>
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                      <span className={item.id === 'learned_verifier' ? 'text-sky-300 font-bold' : ''}>
+                        {item.name}
+                      </span>
+                      <span
+                        className={`text-[10px] px-1.5 py-0.2 rounded border ${
+                          item.id === 'learned_verifier'
+                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 font-bold'
+                            : item.tag === 'PHOTOMETRIC'
+                            ? 'bg-teal-500/20 text-teal-300 border-teal-500/50 font-bold'
+                            : item.id === 'learned_descriptor'
+                            ? 'bg-purple-500/20 text-purple-300 border-purple-500/50 font-bold'
+                            : 'bg-slate-800 text-slate-400 border-slate-700'
+                        }`}
+                      >
                         {item.tag}
                       </span>
                     </div>

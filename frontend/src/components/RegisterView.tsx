@@ -14,14 +14,35 @@ import {
   Sparkles,
   Target,
   AlertCircle,
-  Database
+  Database,
+  Activity,
+  X
 } from 'lucide-react';
 import ReticleCorners from './ReticleCorners';
 import LunarSurfaceCanvas from './LunarSurfaceCanvas';
 import MetricCard from './MetricCard';
 import KeypointTelemetryRadar from './KeypointTelemetryRadar';
+import ChangeDetectionSection from './ChangeDetectionSection';
 import { PIPELINE_STEPS } from '../data/mockData';
-import { AlgorithmName, DemoPair, Keypoint, RegistrationMetrics } from '../types';
+import { AlgorithmName, PreprocessingName, DemoPair, Keypoint, RegistrationMetrics, ChangeDetectionResult } from '../types';
+
+const ALGORITHM_OPTIONS: { value: AlgorithmName; label: string; description: string }[] = [
+  { value: 'Adaptive (AKAZE -> RIFT2)', label: 'Adaptive (AKAZE -> RIFT2) — Auto-escalating', description: 'Smart auto-pilot. Tries fast baseline first, then escalates to robust RIFT2 if needed.' },
+  { value: 'RIFT2-style (Phase Congruency)', label: 'RIFT2-style (Phase Congruency) — Recommended', description: 'Uses phase congruency and maximum moments for highly robust illumination-invariant matching.' },
+  { value: 'Crater Landmarks (trained CNN)', label: 'Crater Landmarks (trained CNN)', description: 'Uses a custom trained CNN to detect craters and use them as reliable matching landmarks.' },
+  { value: 'Learned Match Verifier (trained)', label: 'Learned Match Verifier (trained)', description: 'Uses a Random Forest classifier to filter out false matches from AKAZE based on geometric consistency.' },
+  { value: 'Learned Descriptor (trained)', label: 'Learned Descriptor (trained)', description: 'Uses a custom CNN to extract rich feature descriptors around AKAZE keypoints.' },
+  { value: 'AKAZE (Non-linear Scale Space)', label: 'AKAZE (Non-linear Scale Space)', description: 'Fast baseline using non-linear scale space filtering. Good for similar illuminations.' },
+  { value: 'SIFT (Scale-Invariant Feature Transform)', label: 'SIFT (Scale-Invariant Feature Transform)', description: 'Classic 128D histogram-based feature matching. Struggles with extreme illumination changes.' },
+  { value: 'SuperGlue (Deep Graph Neural Network)', label: 'SuperGlue (Deep Graph Neural Network)', description: 'Graph neural network for feature matching. High accuracy but computationally expensive.' }
+];
+
+const PREPROCESSING_OPTIONS: { value: PreprocessingName; label: string; description: string }[] = [
+  { value: 'clahe', label: 'CLAHE only (Standard)', description: 'Enhances local contrast across the image using Contrast Limited Adaptive Histogram Equalization.' },
+  { value: 'photometric', label: 'Photometric (Lommel-Seeliger)', description: 'Flattens shadows and standardizes brightness based on sun elevation angle.' },
+  { value: 'photometric_clahe', label: 'Photometric + CLAHE', description: 'Combines Photometric correction with CLAHE for maximum contrast balancing.' },
+  { value: 'histogram', label: 'Histogram Matching', description: 'Matches the brightness histogram of the source image to the reference image.' }
+];
 
 interface RegisterViewProps {
   sourceImage: string | null;
@@ -31,6 +52,9 @@ interface RegisterViewProps {
   sourceSensor: string;
   referenceSensor: string;
   algorithm: AlgorithmName;
+  setAlgorithm: (alg: AlgorithmName) => void;
+  preprocessing: PreprocessingName;
+  setPreprocessing: (prep: PreprocessingName) => void;
   isProcessing: boolean;
   currentStepIndex: number;
   hasResults: boolean;
@@ -38,7 +62,6 @@ interface RegisterViewProps {
   setWarpMode: (mode: 'blend' | 'split' | 'difference') => void;
   setSourceSensor: (sensor: string) => void;
   setReferenceSensor: (sensor: string) => void;
-  setAlgorithm: (alg: AlgorithmName) => void;
   onRegisterClick: () => void;
   onSourceUpload: (e: ChangeEvent<HTMLInputElement>) => void;
   onRefUpload: (e: ChangeEvent<HTMLInputElement>) => void;
@@ -50,6 +73,12 @@ interface RegisterViewProps {
   keypoints: Keypoint[];
   metrics: RegistrationMetrics | null;
   registrationError: string | null;
+  changeResult?: ChangeDetectionResult | null;
+  isDetectingChanges?: boolean;
+  onDetectChanges?: (threshold: number, minArea: number) => void;
+  escalated?: boolean | null;
+  adaptiveReason?: string | null;
+  baselineMetrics?: RegistrationMetrics | null;
 }
 
 export default function RegisterView({
@@ -60,6 +89,9 @@ export default function RegisterView({
   sourceSensor,
   referenceSensor,
   algorithm,
+  setAlgorithm,
+  preprocessing,
+  setPreprocessing,
   isProcessing,
   currentStepIndex,
   hasResults,
@@ -67,7 +99,6 @@ export default function RegisterView({
   setWarpMode,
   setSourceSensor,
   setReferenceSensor,
-  setAlgorithm,
   onRegisterClick,
   onSourceUpload,
   onRefUpload,
@@ -78,7 +109,13 @@ export default function RegisterView({
   registeredImage,
   keypoints,
   metrics,
-  registrationError
+  registrationError,
+  changeResult,
+  isDetectingChanges,
+  onDetectChanges,
+  escalated,
+  adaptiveReason,
+  baselineMetrics,
 }: RegisterViewProps) {
   const sourceInputRef = useRef<HTMLInputElement | null>(null);
   const refInputRef = useRef<HTMLInputElement | null>(null);
@@ -86,6 +123,9 @@ export default function RegisterView({
   const [isSourceDragging, setIsSourceDragging] = useState(false);
   const [isRefDragging, setIsRefDragging] = useState(false);
   const [showTripleView, setShowTripleView] = useState(false);
+  
+  const [isAlgorithmModalOpen, setIsAlgorithmModalOpen] = useState(false);
+  const [isPreprocessingModalOpen, setIsPreprocessingModalOpen] = useState(false);
 
   return (
     <div className="space-y-4 pb-8 animate-fadeIn">
@@ -348,24 +388,24 @@ export default function RegisterView({
             <div className="flex items-center gap-2 font-mono text-xs">
               <Sliders className="w-3.5 h-3.5 text-amber-400" />
               <span className="text-slate-400 text-[11px]">ALGORITHM:</span>
-              <select
-                value={algorithm}
-                onChange={(e) => setAlgorithm(e.target.value as AlgorithmName)}
-                className="bg-[#121B27] border border-[#223246] rounded px-2.5 py-1 text-xs font-mono text-amber-300 focus:outline-none focus:border-[#FF9F43]"
+              <button
+                onClick={() => setIsAlgorithmModalOpen(true)}
+                className="bg-[#121B27] border border-[#223246] hover:border-amber-500/50 hover:bg-[#1A2636] rounded px-3 py-1.5 text-xs font-mono text-amber-300 focus:outline-none transition-colors flex items-center justify-between min-w-[240px] text-left"
               >
-                <option value="RIFT2-style (Phase Congruency)">
-                  RIFT2-style (Phase Congruency + Max Moments) — Recommended
-                </option>
-                <option value="SuperGlue (Deep Graph Neural Network)">
-                  SuperGlue (Graph Neural Feature Matching)
-                </option>
-                <option value="AKAZE (Non-linear Scale Space)">
-                  AKAZE (Non-linear Scale Space Filtering)
-                </option>
-                <option value="SIFT (Scale-Invariant Feature Transform)">
-                  SIFT (Difference of Gaussians + 128D Hist)
-                </option>
-              </select>
+                <span className="truncate">{ALGORITHM_OPTIONS.find(o => o.value === algorithm)?.label || algorithm}</span>
+                <ChevronRight className="w-3.5 h-3.5 ml-2 opacity-70" />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 font-mono text-xs">
+              <span className="text-slate-400 text-[11px]">PREPROCESSING:</span>
+              <button
+                onClick={() => setIsPreprocessingModalOpen(true)}
+                className="bg-[#121B27] border border-[#223246] hover:border-cyan-500/50 hover:bg-[#1A2636] rounded px-3 py-1.5 text-xs font-mono text-cyan-300 focus:outline-none transition-colors flex items-center justify-between min-w-[200px] text-left"
+              >
+                <span className="truncate">{PREPROCESSING_OPTIONS.find(o => o.value === preprocessing)?.label || preprocessing}</span>
+                <ChevronRight className="w-3.5 h-3.5 ml-2 opacity-70" />
+              </button>
             </div>
             <div className="hidden sm:flex items-center gap-1.5 font-mono text-[10px] text-slate-500">
               <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
@@ -458,6 +498,41 @@ export default function RegisterView({
       {/* ==================================================================== */}
       {hasResults && (
         <div className="space-y-4 animate-slideUp">
+          {/* ADAPTIVE LOGIC HUD */}
+          {algorithm.startsWith('Adaptive') && adaptiveReason && (
+            <div className={`p-3 rounded-lg border flex items-center justify-between shadow-xl ${
+              escalated 
+                ? 'bg-amber-950/40 border-amber-500/50 text-amber-200' 
+                : 'bg-emerald-950/40 border-emerald-500/50 text-emerald-200'
+            }`}>
+              <div className="flex items-center gap-3">
+                <Sparkles className={`w-5 h-5 ${escalated ? 'text-amber-400' : 'text-emerald-400'}`} />
+                <div className="flex flex-col">
+                  <span className="font-mono text-[10px] font-bold uppercase tracking-wider">
+                    {escalated ? 'ADAPTIVE ESCALATION TRIGGERED' : 'ADAPTIVE BASELINE SUCCEEDED'}
+                  </span>
+                  <span className="text-xs font-sans mt-0.5 opacity-90">{adaptiveReason}</span>
+                </div>
+              </div>
+              {baselineMetrics && (
+                <div className="hidden sm:flex items-center gap-4 text-[10px] font-mono bg-black/30 px-3 py-1.5 rounded border border-white/10">
+                  <div className="flex flex-col">
+                    <span className="text-slate-500">BASELINE INLIERS</span>
+                    <span className={escalated ? 'text-red-400 font-bold' : 'text-emerald-400 font-bold'}>
+                      {baselineMetrics.inlier_count ?? baselineMetrics.inlierCount ?? 0}
+                    </span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-slate-500">BASELINE SPREAD</span>
+                    <span className={escalated ? 'text-red-400 font-bold' : 'text-emerald-400 font-bold'}>
+                      {(baselineMetrics.distribution_score ?? baselineMetrics.distributionScore ?? 0).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* BENTO ROW: 4 TELEMETRY METRIC TILES */}
           <div className="grid grid-cols-12 gap-3">
             <div className="col-span-6 sm:col-span-3">
@@ -613,6 +688,25 @@ export default function RegisterView({
 
               {/* Bento Action Download Buttons */}
               <div className="mt-3 flex flex-col gap-2">
+                {/* DETECT CHANGES ACTION BUTTON (MODULE 6) */}
+                {onDetectChanges && (
+                  <button
+                    onClick={() => onDetectChanges(30, 50)}
+                    disabled={isDetectingChanges}
+                    className="w-full p-2.5 bg-gradient-to-r from-emerald-500/20 via-teal-500/20 to-emerald-500/20 border border-emerald-500/50 hover:border-emerald-400 rounded flex items-center justify-between cursor-pointer hover:bg-emerald-500/30 transition-all shadow-[0_0_14px_rgba(16,185,129,0.2)] disabled:opacity-50"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Activity className={`w-4 h-4 text-emerald-400 ${isDetectingChanges ? 'animate-spin' : 'animate-pulse'}`} />
+                      <span className="font-mono text-[10px] text-emerald-300 font-bold uppercase tracking-wider">
+                        {isDetectingChanges ? 'ANALYZING SURFACE...' : 'DETECT SURFACE CHANGES'}
+                      </span>
+                    </div>
+                    <span className="text-[9px] font-mono bg-emerald-950 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-800">
+                      MOD 6
+                    </span>
+                  </button>
+                )}
+
                 <button
                   onClick={() => {
                     if (registeredImage) {
@@ -691,6 +785,16 @@ export default function RegisterView({
               </div>
             </div>
           </div>
+
+          {/* LUNAR SURFACE CHANGE DETECTION HUD (MODULE 6) */}
+          {onDetectChanges && (
+            <ChangeDetectionSection
+              changeResult={changeResult || null}
+              isDetecting={!!isDetectingChanges}
+              onDetectChanges={onDetectChanges}
+              showToast={showToast}
+            />
+          )}
 
           {/* TOGGLEABLE SPATIAL REGISTRATION TRIPLE-VIEW BENTO ROW */}
           <div className="bg-[#0E1522]/90 border border-[#1C283B] rounded-lg p-3.5 shadow-xl">
@@ -772,6 +876,98 @@ export default function RegisterView({
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ALGORITHM MODAL */}
+      {isAlgorithmModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-[#0E1522] border border-[#1C283B] rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between p-4 border-b border-[#1C283B] bg-[#121B27]">
+              <div className="flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-amber-400" />
+                <h3 className="font-mono font-bold text-slate-200 uppercase tracking-wider">Select Algorithm</h3>
+              </div>
+              <button 
+                onClick={() => setIsAlgorithmModalOpen(false)}
+                className="text-slate-400 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto space-y-3">
+              {ALGORITHM_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => {
+                    setAlgorithm(opt.value);
+                    setIsAlgorithmModalOpen(false);
+                  }}
+                  className={`w-full text-left p-4 rounded-lg border transition-all ${
+                    algorithm === opt.value
+                      ? 'bg-amber-500/10 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.15)]'
+                      : 'bg-[#121B27] border-[#223246] hover:bg-[#1A2636] hover:border-slate-500'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`font-mono font-bold text-sm ${algorithm === opt.value ? 'text-amber-400' : 'text-slate-200'}`}>
+                      {opt.label}
+                    </span>
+                    {algorithm === opt.value && <CheckCircle2 className="w-4 h-4 text-amber-400" />}
+                  </div>
+                  <p className="text-xs text-slate-400 font-sans leading-relaxed">
+                    {opt.description}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PREPROCESSING MODAL */}
+      {isPreprocessingModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-[#0E1522] border border-[#1C283B] rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between p-4 border-b border-[#1C283B] bg-[#121B27]">
+              <div className="flex items-center gap-2">
+                <Target className="w-5 h-5 text-cyan-400" />
+                <h3 className="font-mono font-bold text-slate-200 uppercase tracking-wider">Select Preprocessing</h3>
+              </div>
+              <button 
+                onClick={() => setIsPreprocessingModalOpen(false)}
+                className="text-slate-400 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto space-y-3">
+              {PREPROCESSING_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => {
+                    setPreprocessing(opt.value);
+                    setIsPreprocessingModalOpen(false);
+                  }}
+                  className={`w-full text-left p-4 rounded-lg border transition-all ${
+                    preprocessing === opt.value
+                      ? 'bg-cyan-500/10 border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.15)]'
+                      : 'bg-[#121B27] border-[#223246] hover:bg-[#1A2636] hover:border-slate-500'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`font-mono font-bold text-sm ${preprocessing === opt.value ? 'text-cyan-400' : 'text-slate-200'}`}>
+                      {opt.label}
+                    </span>
+                    {preprocessing === opt.value && <CheckCircle2 className="w-4 h-4 text-cyan-400" />}
+                  </div>
+                  <p className="text-xs text-slate-400 font-sans leading-relaxed">
+                    {opt.description}
+                  </p>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
